@@ -9,8 +9,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"runtime"
+	"time"
 )
 
 //go:embed config.yaml
@@ -20,6 +22,31 @@ func main() {
 	config, err := config.LoadConfig(configYaml)
 	if err != nil {
 		fmt.Printf("Error occured reading config data: %s", err)
+		os.Exit(-1)
+	}
+
+	// Check if credential exists
+	token, err := credentials.GetCredentials()
+	if token != nil {
+		if !time.Now().After(token.ExpiresDate) {
+			log.Printf("You are logged in!")
+			return
+		}
+
+		// Refresh token
+		newToken, err := auth.RefreshToken(token, &config.Auth)
+		if err != nil {
+			fmt.Printf("Error occured while refreshing token: %s", err)
+			os.Exit(-1)
+		}
+
+		err = credentials.SaveCredentials(newToken)
+		if err != nil {
+			fmt.Printf("Error while updating credentials with token info %s", err)
+			os.Exit(-1)
+		}
+
+		os.Exit(0)
 	}
 
 	state := pkce.RandomString()
@@ -29,15 +56,15 @@ func main() {
 		"%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s&scope=openid profile read_api&code_challenge=%s&code_challenge_method=S256",
 		config.Auth.AuthURL, config.Auth.ClientID, config.Auth.RedirectURI, state, codeChallenge)
 
-	tokenCh := make(chan auth.AuthToken)
+	tokenCh := make(chan *auth.AuthToken)
 	defer close(tokenCh)
 
 	go handleAuthRedirect(tokenCh, codeVerifier, &config.Auth)
 	openBrowser(authUrl)
 
-	token := <-tokenCh
+	token = <-tokenCh
 
-	err = credentials.SaveCredentials(&token)
+	err = credentials.SaveCredentials(token)
 	if err != nil {
 		log.Printf("Error while storing token %s", err)
 	}
@@ -57,7 +84,7 @@ func openBrowser(url string) bool {
 	return cmd.Start() == nil
 }
 
-func handleAuthRedirect(tokenCh chan auth.AuthToken, codeVerifier string, config *config.ConfigAuth) {
+func handleAuthRedirect(tokenCh chan *auth.AuthToken, codeVerifier string, config *config.ConfigAuth) {
 
 	http.HandleFunc("/auth/redirect", func(w http.ResponseWriter, r *http.Request) {
 		code := r.URL.Query().Get("code")
@@ -69,7 +96,7 @@ func handleAuthRedirect(tokenCh chan auth.AuthToken, codeVerifier string, config
 		}
 
 		w.Write([]byte("You have authenticated successfully. You can now close this browser window."))
-		tokenCh <- *token
+		tokenCh <- token
 	})
 
 	err := http.ListenAndServe(":7171", nil)

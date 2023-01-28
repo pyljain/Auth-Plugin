@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 func RequestToken(code string, codeVerifier string, config *config.ConfigAuth) (*AuthToken, error) {
@@ -40,10 +41,20 @@ func RequestToken(code string, codeVerifier string, config *config.ConfigAuth) (
 		return nil, err
 	}
 
+	at.CalcExpiresDate()
+	at.CodeVerifier = codeVerifier
+
 	return &at, nil
 }
 
 type AuthToken struct {
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
+	AccessToken  string    `json:"access_token"`
+	RefreshToken string    `json:"refresh_token"`
+	ExpiresIn    int       `json:"expires_in"`
+	ExpiresDate  time.Time `json:"expires_date"`
+	CodeVerifier string    `json:"code_verifier"`
+}
+
+func (t *AuthToken) CalcExpiresDate() {
+	t.ExpiresDate = time.Now().Add(time.Second * time.Duration(t.ExpiresIn))
 }

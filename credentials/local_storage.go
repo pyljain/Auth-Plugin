@@ -34,3 +34,23 @@ func SaveCredentials(tokeninfo *auth.AuthToken) error {
 
 	return nil
 }
+
+func GetCredentials() (*auth.AuthToken, error) {
+	homedir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	basePath := path.Join(homedir, ".auth")
+	filePath := path.Join(basePath, "credentials.json")
+
+	fileContent, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	tokenInfo := auth.AuthToken{}
+	json.Unmarshal(fileContent, &tokenInfo)
+
+	return &tokenInfo, nil
+}
